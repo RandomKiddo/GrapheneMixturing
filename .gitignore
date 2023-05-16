@@ -1,0 +1,8 @@
+# Mac
+*.DS_Store
+
+# Models
+src/saved_models
+
+# Images
+Images/
