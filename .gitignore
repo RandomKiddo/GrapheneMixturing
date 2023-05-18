@@ -3,3 +3,11 @@
 
 # Models
 src/saved_models
+
+# Other Images
+All_Images/
+Images_Resized/
+Images_Resized_2/
+
+# PyCharm
+.idea/

@@ -1,7 +1,6 @@
 import keras
 import tensorflow as tf
 from keras import *
-from keras.callbacks import LearningRateScheduler
 from keras.layers import *
 from keras.losses import SparseCategoricalCrossentropy
 from keras.optimizers import Adam
@@ -10,11 +9,13 @@ import pathlib
 from typing import *
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+from PIL import Image
 
-imgs = pathlib.Path('/Users/firsttry/Desktop/Git/summer/master/Images')  # todo fix picture directory
-batch_size = 16  # may need to reduce based on CPU and GPU specs
-img_height = 1944
-img_width = 2592
+imgs = pathlib.Path(r'C:\Users\nghug\PycharmProjects\AIConda\master\Images_Resized')
+batch_size = 32  # may need to reduce based on CPU and GPU specs
+img_height = 300
+img_width = 400
 AUTOTUNE = tf.data.AUTOTUNE
 
 def get_data() -> Union[Any, Any, Any]:
@@ -47,7 +48,7 @@ def main(verbose: bool = False) -> None:
     :return: None
     '''
     train_ds, val_ds, class_names = get_data()
-    train_ds = train_ds.cache().shuffle(1000).prefetch(buffer_size=AUTOTUNE)
+    train_ds = train_ds.cache().shuffle(3200).prefetch(buffer_size=AUTOTUNE)
     val_ds = val_ds.cache().prefetch(buffer_size=AUTOTUNE)
 
     data_augmentation = keras.Sequential([
@@ -55,14 +56,6 @@ def main(verbose: bool = False) -> None:
         RandomRotation(0.1),
         RandomZoom(0.1)
     ])
-    plt.figure(figsize=(10, 10))
-    for images, _ in train_ds.take(1):
-        for i in range(9):
-            augmented_images = data_augmentation(images)
-            ax = plt.subplot(3, 3, i + 1)
-            plt.imshow(augmented_images[0].numpy().astype("uint8"))
-            plt.axis("off")
-    plt.show()
 
     model = Sequential([
         data_augmentation,
@@ -73,20 +66,21 @@ def main(verbose: bool = False) -> None:
         MaxPooling2D(),
         Conv2D(64, 3, padding='same', activation='relu'),
         MaxPooling2D(),
-        Dropout(0.2),
+        Dropout(0.1),
         Flatten(),
         Dense(128, activation='relu'),
         Dense(6)  # number of classes = 6
     ])
     # try more epochs, greater learning rate, or sgd optimizer
-    model.compile(optimizer=Adam(learning_rate=.001), loss=SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
+    model.compile(optimizer='Adam', loss=SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
     if verbose:
         model.summary()
-    epochs = 20
+
+    epochs = 25
     history = model.fit(
         train_ds,
         validation_data=val_ds,
-        epochs=epochs
+        epochs=epochs,
     )
 
     acc = history.history['accuracy']
@@ -109,7 +103,7 @@ def main(verbose: bool = False) -> None:
     plt.title('Training and Validation Loss')
     plt.show()
 
-    model.save('saved_models/graphene_model_2')
+    model.save('saved_models/graphene_model_3')
 
 def test() -> None:
     model = keras.models.load_model('/Users/firsttry/Desktop/Git/summer/master/src/saved_models/graphene_model')
@@ -126,6 +120,42 @@ def test() -> None:
         .format(class_names[np.argmax(score)], 100 * np.max(score))
     )
 
+def augment_and_save_images() -> None:
+    '''
+    This function should only be called once. It will multiply the dataset ten-fold through augmentation
+    :return: None
+    '''
+    data_augmentation = keras.Sequential([
+        RandomFlip('horizontal', input_shape=(img_height, img_width, 3)),
+        RandomRotation(0.1),
+        RandomZoom(0.1),
+        RandomContrast(0.1)
+    ])
+    no_repeat_number = 0
+    ds = image_dataset_from_directory(
+        imgs,
+        seed=123,
+        image_size=(img_height, img_width),
+        batch_size=1
+    )
+
+def get_label_from_int(i: int) -> str:
+    labels = ('3L', '4L', '5L+', 'Bilayer', 'Monolayer', 'NoSample')
+    return labels[i]
+
+def resize_data() -> None:
+    subdirs = ('3L', '4L', '5L+', 'Bilayer', 'Monolayer', 'NoSample')
+    PATH = r'C:\Users\nghug\PycharmProjects\AIConda\master\Images'
+    for i in range(6):
+        for f in os.listdir(PATH + '\\' + subdirs[i]):
+            img = Image.open(PATH + '\\' + subdirs[i] + '\\' + f)
+            resized = img.resize((400, 300))
+            resized.save(r'C:\Users\nghug\PycharmProjects\AIConda\master\Images_Resized_2' + '\\' + subdirs[i] + '\\' + f)
+
+
 if __name__ == '__main__':
     main(verbose=True)  # todo verbose=False
     # test()
+    # augment_and_save_images()
+    # resize_data()
+
