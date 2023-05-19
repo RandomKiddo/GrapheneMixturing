@@ -8,6 +8,9 @@ src/saved_models
 All_Images/
 Images_Resized/
 Images_Resized_2/
+GAN/
+GANImages/
+Max/
 
 # PyCharm
 .idea/
