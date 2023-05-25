@@ -1,8 +1,9 @@
 # Mac
 *.DS_Store
 
-# Models
+# Models & Figures
 src/saved_models
+src/saved_figs
 
 # Other Images
 All_Images/
@@ -11,6 +12,7 @@ Images_Resized_2/
 GAN/
 GANImages/
 Max/
+Images_Resized_3/
 
 # PyCharm
 .idea/
