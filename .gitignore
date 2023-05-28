@@ -13,6 +13,8 @@ GAN/
 GANImages/
 Max/
 Images_Resized_3/
+Images/Masked/
+Images/Resized/
 
 # PyCharm
 .idea/

@@ -43,6 +43,7 @@ x = arange(max_i)
 phi = 3
 theta = 3
 
+'''
 # Increase intensity such that bright pixels only become
 # mildly brighter while dark pixels become much brighter
 nimg = (max_i/phi)*(resize/(max_i/theta))**0.5
@@ -66,9 +67,18 @@ plot(x,x,'k:') # Original image
 plot(x,z, 'b-') # Decreased brightness
 axis('tight')
 plt.savefig(path + f'{phi}_{theta}_2.png')
+'''
+
+clahe = cv2.createCLAHE(clipLimit=3., tileGridSize=(8, 8))
+lab = cv2.cvtColor(resize, cv2.COLOR_RGB2LAB)
+l, a, b = cv2.split(lab)
+l2 = clahe.apply(l)
+lab = cv2.merge((l2, a, b))
+img2 = cv2.cvtColor(lab, cv2.COLOR_LAB2BGR)
+cv2.imwrite(path + 'test.png', img2)
 
 # Grayscale the image
-gray = cv2.cvtColor(nimg1, cv2.COLOR_RGB2GRAY)
+gray = cv2.cvtColor(img2, cv2.COLOR_RGB2GRAY)
 
 # Apply Sobel image edge detection in the x and y
 # Then convert the scale to return and absolute
@@ -144,10 +154,10 @@ print(max(set(greens), key=greens.count))
 resize = Image.open(path + '3.png')
 final = resize.copy()
 colors = {
-    'nothing': (255, 0, 0), # red
-    '5': (255, 128, 0), # orange
-    '4': (255, 255, 0), # yellow
-    '3': (128, 255, 0), # chartreuse
+    'nothing': (166, 77, 255), # lavender
+    '5': (255, 0, 0), # red
+    '4': (255, 128, 0), # orange
+    '3': (255, 255, 0), # yellow
     '2': (0, 255, 85), # malachite
     '1': (0, 255, 255) # aqua
 }
