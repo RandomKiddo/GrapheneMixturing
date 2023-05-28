@@ -69,6 +69,8 @@ axis('tight')
 plt.savefig(path + f'{phi}_{theta}_2.png')
 '''
 
+# Increase brightness and contrast of the image to increase
+# the ability for Sobel method to find edges of the sample
 clahe = cv2.createCLAHE(clipLimit=3., tileGridSize=(8, 8))
 lab = cv2.cvtColor(resize, cv2.COLOR_RGB2LAB)
 l, a, b = cv2.split(lab)
