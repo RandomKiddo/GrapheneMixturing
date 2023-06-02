@@ -77,10 +77,10 @@ def main(verbose: bool = False) -> None:
         MaxPooling2D(),
         Conv2D(32, 3, padding='same', activation='relu'),
         MaxPooling2D(),
-        Dropout(0.1),
+        Dropout(0.2),
         Flatten(),
         Dense(64, activation='relu'),
-        Dense(6)  # number of classes = 6
+        Dense(2)  # number of classes = 2
     ])
 
     # Compile the model. We use the default Adam optimizer because it works well and its default learning

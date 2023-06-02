@@ -106,12 +106,13 @@ def double_conv_block(x: Any, n_filters: Any) -> Any:
 
 def downsample_block(x: Any, n_filters: Any) -> Tuple[Any, Any]:
     f = double_conv_block(x, n_filters)
-    p = MaxPool2D(2)(f)
+    p = MaxPool2D(strides=2, padding='same')(f)
     p = Dropout(0.2)(p)
     return f, p
 
 def upsample_block(x: Any, conv_features: Any, n_filters: Any) -> Any:
     x = Conv2DTranspose(n_filters, 3, 2, padding='same')(x)
+    x = Cropping2D(cropping=((x.shape[1]-conv_features.shape[1], 0), (x.shape[2]-conv_features.shape[2], 0)))(x)
     x = concatenate([x, conv_features])
     x = Dropout(0.2)(x)
     x = double_conv_block(x, n_filters)
@@ -133,44 +134,24 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     )
     val_batches = val_ds.batch(batch_size)
 
-    base_model = MobileNetV2(input_shape=(img_height, img_width, 3), include_top=False)
-
-    layer_names = [
-        'block_1_expand_relu',  # 150x200
-        'block_3_expand_relu',  # 75x100
-        'block_5_expand_relu',  # 38x50
-        'block_7_expand_relu',  # 19x25
-        'block_13_project'  # 10x13
-    ]
-    base_model_outputs = [base_model.get_layer(name).output for name in layer_names]
-
-    down_stack = Model(inputs=base_model.input, outputs=base_model_outputs)
-    down_stack.trainable = False
-
-    up_stack = [
-        pix2pix.upsample(512, 3),
-        pix2pix.upsample(256, 3),
-        pix2pix.upsample(128, 3),
-        pix2pix.upsample(64, 3)
-    ]
-
     inputs = Input(shape=(img_height, img_width, 3))
 
-    skips = down_stack(inputs)
-    x = skips[-1]
-    skips = reversed(skips[:-1])
+    f1, p1 = downsample_block(inputs, 64)
+    f2, p2 = downsample_block(p1, 128)
+    f3, p3 = downsample_block(p2, 256)
+    f4, p4 = downsample_block(p3, 512)
 
-    for up, skip in zip(up_stack, skips):
-        x = up(x)
-        concat = keras.layers.Concatenate()
-        x = Cropping2D(cropping=((x.shape[1]-skip.shape[1], 0), (x.shape[2]-skip.shape[2], 0)))(x)
-        x = concat([x, skip])
+    bottleneck = double_conv_block(p4, 1024)
 
-    last = Conv2DTranspose(filters=2, kernel_size=3, strides=2, padding='same')  # 2 color classes = 2 filters
-    x = last(x)
+    u6 = upsample_block(bottleneck, f4, 512)
+    u7 = upsample_block(u6, f3, 256)
+    u8 = upsample_block(u7, f2, 128)
+    u9 = upsample_block(u8, f1, 64)
 
-    u_net = Model(inputs=inputs, outputs=x)
-    u_net.compile(optimizer=Adam(learning_rate=.0017), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    outputs = Conv2D(2, 1, padding='same', activation='softmax')(u9)
+
+    u_net = Model(inputs, outputs, name='U-Net')
+    u_net.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics='accuracy')
 
     if verbose:
         u_net.summary()
@@ -201,8 +182,6 @@ def model(verbose: bool = False, plot: bool = False) -> None:
         else:
             for images, masks in train_batches.take(1):
                 sample_image, sample_mask = images[0], masks[0]
-                print(sample_mask)
-                print(masks)
             display([sample_image, sample_mask,
                      create_mask(u_net.predict(sample_image[tf.newaxis, ...]))])
 
@@ -237,11 +216,11 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     plt.plot(epochs_range, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
-    plt.savefig('/Users/firsttry/Desktop/u_net_model_5_figs.png')
+    plt.savefig('/Users/firsttry/Desktop/u_net_model_6_figs.png')
     plt.show()
 
     # Save the model
-    u_net.save('/Users/firsttry/Desktop/u_net_model_5')
+    u_net.save('/Users/firsttry/Desktop/u_net_model_6')
 
 def predict() -> None:
     model = keras.models.load_model(r'/Users/firsttry/Desktop/u_net_model_5')
@@ -301,5 +280,5 @@ def test() -> None:
 if __name__ == '__main__':
     # solidify_masks()
     # npz_data()
-    # model(verbose=False, plot=True)
-    predict()
+    model(verbose=False, plot=True)
+    # predict()
