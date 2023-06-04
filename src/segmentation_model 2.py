@@ -4,7 +4,8 @@ from keras import Model
 from keras.applications import MobileNetV2
 from keras.callbacks import Callback, LearningRateScheduler
 from keras.losses import SparseCategoricalCrossentropy, categorical_crossentropy
-from keras.optimizers import Adam
+from keras.metrics import MeanIoU
+from keras.optimizers import Adam, SGD
 from keras.utils import plot_model
 from tensorflow.python.data import Dataset
 from tensorflow_examples.models.pix2pix import pix2pix
@@ -20,9 +21,11 @@ import pydotplus
 import graphviz
 import tensorflow_datasets as tfds
 
+# todo change learning rate or optimizer
+
 img_width = 400
 img_height = 300
-batch_size = 32
+batch_size = 16
 buffer_size = 300
 train_length = 221
 steps_per_epoch = train_length // batch_size
@@ -30,8 +33,8 @@ image_colors = [(255, 255, 0), (129, 0, 127)]
 color_reference = tf.cast(tf.constant(image_colors), dtype=tf.uint8)
 
 def npz_data() -> None:
-    path_masks = r'/Users/firsttry/Desktop/Segmentation/Masks2'
-    path_normal = r'/Users/firsttry/Desktop/Segmentation/Normal'
+    path_masks = r'C:\Users\nghug\Desktop\AI_Research\Segmentation\Masks2'
+    path_normal = r'C:\Users\nghug\Desktop\AI_Research\Segmentation\Normal'
 
     array_masks = []
     array_normal = []
@@ -54,12 +57,11 @@ def npz_data() -> None:
                     array[c, r, 0] = 1
                 else:
                     array[c, r, 0] = 0
-        save = array
         array_masks.append(array)
 
     last = int(len(array_normal)*0.9)
 
-    np.savez(r'/Users/firsttry/Desktop/segmentation_dataset.npz', x_train=array_normal[:last],
+    np.savez(r'C:\Users\nghug\Desktop\AI_Research\segmentation_dataset.npz', x_train=array_normal[:last],
              y_train=array_masks[:last], x_valid=array_normal[last:], y_valid=array_masks[last:])
 
 def solidify_masks() -> None:
@@ -78,7 +80,7 @@ def solidify_masks() -> None:
         img.save(path_masks + '/' + f)
 
 def get_data() -> Tuple[Dataset, Dataset]:
-    with np.load(r'/Users/firsttry/Desktop/segmentation_dataset.npz') as data:
+    with np.load(r'C:\Users\nghug\Desktop\AI_Research\segmentation_dataset.npz') as data:
         train_x = data['x_train']
         train_y = data['y_train']
         valid_x = data['x_valid']
@@ -112,11 +114,18 @@ def downsample_block(x: Any, n_filters: Any) -> Tuple[Any, Any]:
 
 def upsample_block(x: Any, conv_features: Any, n_filters: Any) -> Any:
     x = Conv2DTranspose(n_filters, 3, 2, padding='same')(x)
-    x = Cropping2D(cropping=((x.shape[1]-conv_features.shape[1], 0), (x.shape[2]-conv_features.shape[2], 0)))(x)
+    if x.shape[1]-conv_features.shape[1] != 0 or x.shape[2]-conv_features.shape[2] != 0:
+        x = Cropping2D(cropping=((x.shape[1]-conv_features.shape[1], 0), (x.shape[2]-conv_features.shape[2], 0)))(x)
     x = concatenate([x, conv_features])
     x = Dropout(0.2)(x)
     x = double_conv_block(x, n_filters)
     return x
+
+def add_sample_weights(image: Any, label: Any) -> Tuple[Any, Any, Any]:
+    class_weights = tf.constant([1.0, 8.0])
+    class_weights = class_weights / tf.reduce_sum(class_weights)
+    sample_weights = tf.gather(class_weights, indices=tf.cast(label, tf.int32))
+    return image, label, sample_weights
 
 def model(verbose: bool = False, plot: bool = False) -> None:
     train_ds, val_ds = get_data()  # todo work with train_ds
@@ -151,12 +160,12 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     outputs = Conv2D(2, 1, padding='same', activation='softmax')(u9)
 
     u_net = Model(inputs, outputs, name='U-Net')
-    u_net.compile(optimizer=Adam(), loss='sparse_categorical_crossentropy', metrics='accuracy')
+    u_net.compile(optimizer=SGD(learning_rate=0.001), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
 
     if verbose:
         u_net.summary()
     if plot:
-        plot_model(u_net, to_file=r'/Users/firsttry/Desktop/u_net.jpg', show_shapes=True)
+        plot_model(u_net, to_file=r'C:\Users\nghug\Desktop\AI_Research\src\saved_figs\u_net.jpg', show_shapes=True)
 
     def display(display_list: list) -> None:
         plt.figure(figsize=(15, 15))
@@ -178,12 +187,17 @@ def model(verbose: bool = False, plot: bool = False) -> None:
         if dataset:
             for image, mask in dataset.take(num):
                 pred_mask = model.predict(image)
+                pred_mask *= 255.0
+                print(pred_mask.min())
+                print(pred_mask.max())
+                print(np.unique(pred_mask, return_counts=True))
                 display([image[0], mask[0], create_mask(pred_mask)])
         else:
             for images, masks in train_batches.take(1):
                 sample_image, sample_mask = images[0], masks[0]
-            display([sample_image, sample_mask,
-                     create_mask(u_net.predict(sample_image[tf.newaxis, ...]))])
+            pred_mask = u_net.predict(sample_image[tf.newaxis, ...])
+            pred_mask = create_mask(pred_mask)
+            display([sample_image, sample_mask, pred_mask])
 
     class DisplayCallback(Callback):
         def on_epoch_end(self, epoch, logs=None):
@@ -193,8 +207,9 @@ def model(verbose: bool = False, plot: bool = False) -> None:
 
     show_predictions()
 
-    epochs = 25
-    history = u_net.fit(train_batches, epochs=epochs, steps_per_epoch=steps_per_epoch, validation_data=val_batches)
+    epochs = 10
+    history = u_net.fit(train_batches.map(add_sample_weights), epochs=epochs, steps_per_epoch=steps_per_epoch,
+                        validation_data=val_batches, callbacks=[DisplayCallback()])
 
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
@@ -216,11 +231,11 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     plt.plot(epochs_range, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
-    plt.savefig('/Users/firsttry/Desktop/u_net_model_6_figs.png')
+    plt.savefig(r'C:\Users\nghug\Desktop\AI_Research\src\saved_figs\u_net_model_6_figs.png')
     plt.show()
 
     # Save the model
-    u_net.save('/Users/firsttry/Desktop/u_net_model_6')
+    u_net.save(r'C:\Users\nghug\Desktop\AI_Research\src\saved_models\u_net_model_6')
 
 def predict() -> None:
     model = keras.models.load_model(r'/Users/firsttry/Desktop/u_net_model_5')
