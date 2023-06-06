@@ -4,7 +4,7 @@ from keras import Model
 from keras.applications import MobileNetV2
 from keras.callbacks import Callback, LearningRateScheduler
 from keras.losses import SparseCategoricalCrossentropy, categorical_crossentropy
-from keras.optimizers import Adam
+from keras.optimizers import Adam, SGD
 from keras.utils import plot_model
 from tensorflow.python.data import Dataset
 from tensorflow_examples.models.pix2pix import pix2pix
@@ -19,6 +19,8 @@ import pydot
 import pydotplus
 import graphviz
 import tensorflow_datasets as tfds
+import keras.backend as K
+import random
 
 img_width = 400
 img_height = 300
@@ -56,6 +58,11 @@ def npz_data() -> None:
                     array[c, r, 0] = 0
         save = array
         array_masks.append(array)
+
+    zipped = list(zip(array_normal, array_masks))
+    random.shuffle(zipped)
+
+    array_normal, array_masks = list(zip(*zipped))
 
     last = int(len(array_normal)*0.9)
 
@@ -99,23 +106,11 @@ def load_image(image: Any, mask: Any) -> Tuple[Any, Any]:
     input_image, input_mask = normalize(input_image, input_mask)
     return input_image, input_mask
 
-def double_conv_block(x: Any, n_filters: Any) -> Any:
-    x = Conv2D(n_filters, 3, padding='same', activation='relu', kernel_initializer='he_normal')(x)
-    x = Conv2D(n_filters, 3, padding='same', activation='relu', kernel_initializer='he_normal')(x)
-    return x
-
-def downsample_block(x: Any, n_filters: Any) -> Tuple[Any, Any]:
-    f = double_conv_block(x, n_filters)
-    p = MaxPool2D(2)(f)
-    p = Dropout(0.2)(p)
-    return f, p
-
-def upsample_block(x: Any, conv_features: Any, n_filters: Any) -> Any:
-    x = Conv2DTranspose(n_filters, 3, 2, padding='same')(x)
-    x = concatenate([x, conv_features])
-    x = Dropout(0.2)(x)
-    x = double_conv_block(x, n_filters)
-    return x
+def add_sample_weights(image: Any, label: Any) -> Tuple[Any, Any, Any]:
+    class_weights = tf.constant([1.0, 2.0])
+    class_weights = class_weights / tf.reduce_sum(class_weights)
+    sample_weights = tf.gather(class_weights, indices=tf.cast(label, tf.int32))
+    return image, label, sample_weights
 
 def model(verbose: bool = False, plot: bool = False) -> None:
     train_ds, val_ds = get_data()  # todo work with train_ds
@@ -160,22 +155,27 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     x = skips[-1]
     skips = reversed(skips[:-1])
 
+    x = Dropout(.2)(x)
+
     for up, skip in zip(up_stack, skips):
         x = up(x)
         concat = keras.layers.Concatenate()
-        x = Cropping2D(cropping=((x.shape[1]-skip.shape[1], 0), (x.shape[2]-skip.shape[2], 0)))(x)
+        if x.shape[1]-skip.shape[1] != 0 or x.shape[2]-skip.shape[2] != 0:
+            x = Cropping2D(cropping=((x.shape[1]-skip.shape[1], 0), (x.shape[2]-skip.shape[2], 0)))(x)
         x = concat([x, skip])
 
-    last = Conv2DTranspose(filters=2, kernel_size=3, strides=2, padding='same')  # 2 color classes = 2 filters
+    last = Conv2DTranspose(filters=2, kernel_size=3, strides=2, padding='same',
+                           kernel_regularizer='l1l2')  # 2 color classes = 2 filters
     x = last(x)
+    x = Dropout(.2)(x)
 
     u_net = Model(inputs=inputs, outputs=x)
-    u_net.compile(optimizer=Adam(learning_rate=.0017), loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    u_net.compile(optimizer=Adam(), loss=SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
 
     if verbose:
         u_net.summary()
     if plot:
-        plot_model(u_net, to_file=r'/Users/firsttry/Desktop/u_net.jpg', show_shapes=True)
+        plot_model(u_net, to_file=r'/Users/firsttry/Desktop/u_net_3.jpg', show_shapes=True)
 
     def display(display_list: list) -> None:
         plt.figure(figsize=(15, 15))
@@ -201,8 +201,6 @@ def model(verbose: bool = False, plot: bool = False) -> None:
         else:
             for images, masks in train_batches.take(1):
                 sample_image, sample_mask = images[0], masks[0]
-                print(sample_mask)
-                print(masks)
             display([sample_image, sample_mask,
                      create_mask(u_net.predict(sample_image[tf.newaxis, ...]))])
 
@@ -214,8 +212,9 @@ def model(verbose: bool = False, plot: bool = False) -> None:
 
     show_predictions()
 
-    epochs = 25
-    history = u_net.fit(train_batches, epochs=epochs, steps_per_epoch=steps_per_epoch, validation_data=val_batches)
+    epochs = 35
+    history = u_net.fit(train_batches.map(add_sample_weights), epochs=epochs, steps_per_epoch=steps_per_epoch,
+                        validation_data=val_batches)
 
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
@@ -237,11 +236,11 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     plt.plot(epochs_range, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
-    plt.savefig('/Users/firsttry/Desktop/u_net_model_5_figs.png')
+    plt.savefig('/Users/firsttry/Desktop/u_net_model_9_figs.png')
     plt.show()
 
     # Save the model
-    u_net.save('/Users/firsttry/Desktop/u_net_model_5')
+    u_net.save('/Users/firsttry/Desktop/u_net_model_9')
 
 def predict() -> None:
     model = keras.models.load_model(r'/Users/firsttry/Desktop/u_net_model_5')
@@ -257,49 +256,9 @@ def predict() -> None:
     plt.imshow(pred_mask[0])
     plt.show()
 
-def test() -> None:
-    def n(input_image, input_mask):
-        input_image = tf.cast(input_image, tf.float32) / 255.0
-        input_mask -= 1
-        return input_image, input_mask
-
-    def l(datapoint):
-        input_image = tf.image.resize(datapoint['image'], (128, 128))
-        print(datapoint['segmentation_mask'])
-        input_mask = tf.image.resize(
-            datapoint['segmentation_mask'],
-            (128, 128),
-            method=tf.image.ResizeMethod.NEAREST_NEIGHBOR,
-        )
-
-        input_image, input_mask = n(input_image, input_mask)
-
-        return input_image, input_mask
-
-    def d(display_list):
-        plt.figure(figsize=(15, 15))
-
-        title = ['Input Image', 'True Mask', 'Predicted Mask']
-
-        for i in range(len(display_list)):
-            plt.subplot(1, len(display_list), i + 1)
-            plt.title(title[i])
-            plt.imshow(tf.keras.utils.array_to_img(display_list[i]))
-            plt.axis('off')
-        plt.show()
-
-    dataset, info = tfds.load('oxford_iiit_pet:3.*.*', with_info=True)
-    print(info)
-    train_images = dataset['train'].map(l, num_parallel_calls=tf.data.AUTOTUNE)
-    train_batches = (train_images.cache().shuffle(1000).batch(64).repeat().prefetch(buffer_size=tf.data.AUTOTUNE))
-    for image, mask in train_batches.take(1):
-        with open(r'C:\Users\nghug\Desktop\AI_Research\output.txt', 'w') as f:
-            print(mask, file=f)
-        f.close()
-
 
 if __name__ == '__main__':
     # solidify_masks()
-    # npz_data()
-    # model(verbose=False, plot=True)
-    predict()
+    npz_data()
+    model(verbose=False, plot=False)
+    # predict()
