@@ -66,10 +66,10 @@ def main(verbose: bool = False) -> None:
     # We first add our data augmentation model, so that way each epoch the data gets augmented.
     # We then normalize the pixel data with Rescaling, and then pass the training data into
     # learning layers of Conv2D and MaxPooling2D. Since we had issues with over-fitting,
-    # we added a Dropout layer of 0.1 which randomly sets inputs to 0, while scaling up
-    # the other inputs by 1/(1-0.1) = 1.11. We then Flatten the data and pass it through
+    # we added a Dropout layer of 0.2 which randomly sets inputs to 0, while scaling up
+    # the other inputs by 1/(1-0.2) = 1.25. We then Flatten the data and pass it through
     # a Dense layer, and then a final Dense layer, which sorts the data into one of the
-    # six provided classes: 3L, 4L, 5L+, Bilayer, Monolayer, or NoSample.
+    # two provided classes: Sample or NoSample.
     model = Sequential([
         data_augmentation,
         Rescaling(1. / 255, input_shape=(img_height, img_width, 3)),
@@ -83,8 +83,8 @@ def main(verbose: bool = False) -> None:
         Dense(2)  # number of classes = 2
     ])
 
-    # Compile the model. We use the default Adam optimizer because it works well and its default learning
-    # rate of 0.001 provides an ideal curve for the accuracy and loss of the training data. Since we are
+    # Compile the model. We use a custom Adam optimizer because we wish to edit the default learning rate of
+    # 0.001 to 0.0001 to ensure a smoother loss curve and attain a better accuracy curve. Since we are
     # working with multiple categories, our loss must be calculated by SparseCategoricalCrossentropy
     model.compile(optimizer=Adam(learning_rate=0.0001), loss=SparseCategoricalCrossentropy(from_logits=True),
                   metrics=['accuracy'])
