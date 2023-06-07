@@ -107,7 +107,7 @@ def load_image(image: Any, mask: Any) -> Tuple[Any, Any]:
     return input_image, input_mask
 
 def add_sample_weights(image: Any, label: Any) -> Tuple[Any, Any, Any]:
-    class_weights = tf.constant([1.0, 2.0])
+    class_weights = tf.constant([1.0, 9.0])
     class_weights = class_weights / tf.reduce_sum(class_weights)
     sample_weights = tf.gather(class_weights, indices=tf.cast(label, tf.int32))
     return image, label, sample_weights
@@ -163,14 +163,15 @@ def model(verbose: bool = False, plot: bool = False) -> None:
         if x.shape[1]-skip.shape[1] != 0 or x.shape[2]-skip.shape[2] != 0:
             x = Cropping2D(cropping=((x.shape[1]-skip.shape[1], 0), (x.shape[2]-skip.shape[2], 0)))(x)
         x = concat([x, skip])
+        x = Dropout(.2)(x)
 
     last = Conv2DTranspose(filters=2, kernel_size=3, strides=2, padding='same',
-                           kernel_regularizer='l1l2')  # 2 color classes = 2 filters
+                           kernel_regularizer='l1_l2')  # 2 color classes = 2 filters
     x = last(x)
     x = Dropout(.2)(x)
 
     u_net = Model(inputs=inputs, outputs=x)
-    u_net.compile(optimizer=Adam(), loss=SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
+    u_net.compile(optimizer=Adam(learning_rate=0.0001), loss=SparseCategoricalCrossentropy(from_logits=True), metrics=['accuracy'])
 
     if verbose:
         u_net.summary()
@@ -212,9 +213,9 @@ def model(verbose: bool = False, plot: bool = False) -> None:
 
     show_predictions()
 
-    epochs = 35
+    epochs = 100
     history = u_net.fit(train_batches.map(add_sample_weights), epochs=epochs, steps_per_epoch=steps_per_epoch,
-                        validation_data=val_batches)
+                        validation_data=val_batches, callbacks=[DisplayCallback()])
 
     acc = history.history['accuracy']
     val_acc = history.history['val_accuracy']
@@ -236,18 +237,20 @@ def model(verbose: bool = False, plot: bool = False) -> None:
     plt.plot(epochs_range, val_loss, label='Validation Loss')
     plt.legend(loc='upper right')
     plt.title('Training and Validation Loss')
-    plt.savefig('/Users/firsttry/Desktop/u_net_model_9_figs.png')
+    plt.savefig('/Users/firsttry/Desktop/u_net_model_12_figs.png')
     plt.show()
 
     # Save the model
-    u_net.save('/Users/firsttry/Desktop/u_net_model_9')
+    u_net.save('/Users/firsttry/Desktop/u_net_model_12')
 
 def predict() -> None:
-    model = keras.models.load_model(r'/Users/firsttry/Desktop/u_net_model_5')
+    model = keras.models.load_model(r'/Users/firsttry/Desktop/u_net_model_10')
     img = keras.utils.load_img(
         r'/Users/firsttry/Desktop/Segmentation/Normal/137_3.1.jpg',
         target_size=(img_height, img_width)
     )
+    plt.imshow(img)
+    plt.show()
     img_array = keras.utils.img_to_array(img)
     img_array = tf.expand_dims(img_array, 0)
     mask = model.predict(img_array)
@@ -259,6 +262,6 @@ def predict() -> None:
 
 if __name__ == '__main__':
     # solidify_masks()
-    npz_data()
-    model(verbose=False, plot=False)
+    # npz_data()
+    model(verbose=False, plot=True)
     # predict()
