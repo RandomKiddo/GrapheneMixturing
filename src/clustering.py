@@ -101,8 +101,11 @@ def process(fp: str) -> None:
     # grayscale formula, we get that the difference in grayscale values between the substrate and
     # the sample would be +/- α +/- β - 2.935l. Since we have l ∈ [1, 5], the upper bound of the
     # difference, taking an α ≈ β ≈ 2, we get a right threshold of about 20.
+    # However, many images have contrast differences, so we double the left
+    # threshold to 40.
     max_value = np.argmax(hist)
-    threshold_left = 20
+    print(max_value)
+    threshold_left = 35
     threshold_right = 1
 
     # Apply the pixels outside the thresholds to the fill color defined prior.
@@ -114,9 +117,11 @@ def process(fp: str) -> None:
                 new[r, c] = fill
             else:
                 new[r, c] = img[r, c]
+    plt.imshow(new)
+    plt.show()
 
     # Median blur the image to remove stray lines, and normalize the background.
-    new = cv2.medianBlur(new, 5)
+    new = cv2.medianBlur(new, 3)
     plt.imshow(new)
     plt.show()
 
@@ -141,4 +146,7 @@ def process(fp: str) -> None:
 
 
 if __name__ == '__main__':
+    process(fp='/Users/firsttry/Desktop/Lab/test/half.jpg')
+    process(fp='/Users/firsttry/Desktop/Lab/test/max.jpg')
     process(fp='/Users/firsttry/Desktop/Lab/test/3.png')
+
