@@ -6,7 +6,6 @@ from sklearn.mixture import GaussianMixture
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import time
-import statistics
 
 def process(fp: str) -> None:
     """
@@ -41,6 +40,7 @@ def process(fp: str) -> None:
     dominant = palette[np.argmax(counts)]
     fill = dominant.tolist()
 
+    '''
     # Plots a swatch of the dominant colors
     indices = np.argsort(counts)[::-1]
     freqs = np.cumsum(np.hstack([[0], counts[indices] / float(counts.sum())]))
@@ -75,6 +75,7 @@ def process(fp: str) -> None:
     ax.set_ylabel('Green')
     ax.set_zlabel('Blue')
     plt.show()
+    '''
 
     # Create a grayscale version of the target image
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
@@ -101,8 +102,8 @@ def process(fp: str) -> None:
     # grayscale formula, we get that the difference in grayscale values between the substrate and
     # the sample would be +/- α +/- β - 2.935l. Since we have l ∈ [1, 5], the upper bound of the
     # difference, taking an α ≈ β ≈ 2, we get a right threshold of about 20.
-    # However, many images have contrast differences, so we double the left
-    # threshold to 40.
+    # However, many images have contrast differences, so we increase the left threshold to a
+    # value of 35 (this helps deal with contrast deifferences as well).
     max_value = np.argmax(hist)
     print(max_value)
     threshold_left = 35
@@ -117,11 +118,15 @@ def process(fp: str) -> None:
                 new[r, c] = fill
             else:
                 new[r, c] = img[r, c]
-    plt.imshow(new)
-    plt.show()
 
     # Median blur the image to remove stray lines, and normalize the background.
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=10, sigmaSpace=1)
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=5, sigmaSpace=1)
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=1, sigmaSpace=1)
     new = cv2.medianBlur(new, 3)
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=2, sigmaSpace=1)
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=1, sigmaSpace=1)
+    new = cv2.bilateralFilter(new, d=5, sigmaColor=0.5, sigmaSpace=1)
     plt.imshow(new)
     plt.show()
 
@@ -149,4 +154,5 @@ if __name__ == '__main__':
     process(fp='/Users/firsttry/Desktop/Lab/test/half.jpg')
     process(fp='/Users/firsttry/Desktop/Lab/test/max.jpg')
     process(fp='/Users/firsttry/Desktop/Lab/test/3.png')
+    process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg')
 
