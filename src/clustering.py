@@ -86,75 +86,50 @@ def process(fp: str) -> None:
     plt.xticks([])
     plt.yticks([])
     plt.subplot(1, 2, 2)
-    hist, bin = np.histogram(img.ravel(), 256, [0, 255])
+    hist, bin = np.histogram(gray.ravel(), 256, [0, 255])
     plt.xlim([0, 255])
     plt.plot(hist)
     plt.title('histogram')
     plt.show()
 
-    # Instantiate a sklearn MeanShift sequence and fit it to the grayscale image.
-    # This helps us gain clusters of the common color values. The cluster_all
-    # field of the MeanShift is True by default, so all pixels will be clustered
-    # in some sense
-    ms = MeanShift()
-    ms.fit(gray.reshape(-1, 1))
-    labels = ms.labels_
-    cluster_centers = ms.cluster_centers_
+    # Get the max value of the histogram and define left and right thresholds for the grayscale
+    # color values. We don't want anything lighter than the substrate background, so we take a
+    # small right threshold. For the left threshold, we use the rgb to grayscale formula to deduce
+    # a value: Y = 0.299r + 0.587g + 0.114b. If the substrate has background of (r0, g0, b0) and
+    # the sample has color (r0 +/- α, g0 - 5l, b0 +/- β), where α, β take into account differences
+    # in the red and green values, and l is the amount of layers of the sample, then by using the
+    # grayscale formula, we get that the difference in grayscale values between the substrate and
+    # the sample would be +/- α +/- β - 2.935l. Since we have l ∈ [1, 5], the upper bound of the
+    # difference, taking an α ≈ β ≈ 2, we get a right threshold of about 20.
+    max_value = np.argmax(hist)
+    threshold_left = 20
+    threshold_right = 1
 
-    # Delete the far ends of the clusters
-    cluster_centers = np.delete(cluster_centers, cluster_centers.argmin())
-    cluster_centers = np.delete(cluster_centers, cluster_centers.argmax())
-
-    # Find the maximum and minimum cluster grayscale values
-    minimum_cluster = min(cluster_centers)
-    maximum_cluster = max(cluster_centers)
-
-    # Cut any pixel outside the range (minimum_cluster, maximum_cluster) as a
-    # black pixel (grayscale value 0)
-    cut = gray.copy()
+    # Apply the pixels outside the thresholds to the fill color defined prior.
     w, h = gray.shape[:2]
-    for r in range(w):
-        for c in range(h):
-            if gray[r, c] < minimum_cluster or gray[r, c] > maximum_cluster:
-                cut[r, c] = 0
-            else:
-                cut[r, c] = gray[r, c]
-
-    # Do the same with a copy of the target image, but instead fill the colors outside
-    # the range with the earlier defined background fill value. This helps normalize
-    # the background color and get rid of tape residue, wafer particles, and more.
-    # todo combine both for loops
     new = img.copy()
     for r in range(w):
         for c in range(h):
-            if cut[r, c] == 0:
+            if gray[r, c] < max_value - threshold_left or gray[r, c] > max_value + threshold_right:
                 new[r, c] = fill
             else:
                 new[r, c] = img[r, c]
+
+    # Median blur the image to remove stray lines, and normalize the background.
+    new = cv2.medianBlur(new, 5)
     plt.imshow(new)
     plt.show()
 
-    # Split the new image and normalize it
-    r, g, b = cv2.split(new / 256)
+    # Flatten the image from (75, 100, 3) to (7500, 3)
+    new_flattened = new.reshape((-1, 3))
 
-    # Plot the cut image rgb values in 3d colorspace like earlier
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(b.flatten(), g.flatten(), r.flatten(), facecolors=pixel_colors)
-    ax.set_xlabel('Blue')
-    ax.set_ylabel('Green')
-    ax.set_zlabel('Red')
-    plt.show()
-
-    # Flatten the new image into (7500, 3) to prepare for Gaussian Mixture Modeling
-    new_flattened = (new / 255).reshape((-1, 3))
-
-    # Instantiate a sklearn GaussianMixture modeling sequence. We use covariance_type
-    # of 'tied' and we wish to find n_components=5
-    gmm = GaussianMixture(n_components=5, covariance_type="tied")
+    # Declare a GaussianMixture model from sklearn using covariance_type='tied' and
+    # fit it to the flattened image, looking for n_components=2 (sample or no sample)
+    gmm = GaussianMixture(n_components=2, covariance_type="tied")
     gmm = gmm.fit(new_flattened)
 
-    # Predict clusters on the data and then shape it back into the image format of (75, 100, 3)
+    # Predict clusters on the image, and reshape the result from (7500, 3) back to
+    # (75, 100, 3), and display the image.
     cluster = gmm.predict(new_flattened)
     cluster = cluster.reshape(75, 100)
     plt.imshow(cluster)
