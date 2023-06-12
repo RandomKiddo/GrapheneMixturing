@@ -41,43 +41,6 @@ def process(fp: str) -> None:
     dominant = palette[np.argmax(counts)]
     fill = dominant.tolist()
 
-    '''
-    # Plots a swatch of the dominant colors
-    indices = np.argsort(counts)[::-1]
-    freqs = np.cumsum(np.hstack([[0], counts[indices] / float(counts.sum())]))
-    rows = np.int_(img.shape[0] * freqs)
-
-    dom_patch = np.zeros(shape=img.shape, dtype=np.uint8)
-    for i in range(len(rows) - 1):
-        dom_patch[rows[i]:rows[i + 1], :, :] += np.uint8(palette[indices[i]])
-
-    fig, ax = plt.subplots(1, 1, figsize=(12, 6))
-    ax.imshow(dom_patch)
-    ax.set_title('Dominant colors')
-    ax.axis('off')
-    plt.show()
-
-    # Creates a colorscheme for the 3d scatter plot of the image colors
-    pixel_colors = img.reshape((np.shape(img)[0] * np.shape(img)[1], 3))
-    norm = colors.Normalize(vmin=-1., vmax=1.)
-    norm.autoscale(pixel_colors)
-    pixel_colors = norm(pixel_colors).tolist()
-
-    # Gets the red, green, and blue channels of the image and then creates
-    # a variable that stores the array of colors (r, g, b)
-    r, g, b = cv2.split(img)
-    rgb = list(zip(r.flatten(), g.flatten(), b.flatten()))
-
-    # The 3d scatter plot of the image colors
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
-    ax.set_xlabel('Red')
-    ax.set_ylabel('Green')
-    ax.set_zlabel('Blue')
-    plt.show()
-    '''
-
     # Create a grayscale version of the target image
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
@@ -132,15 +95,22 @@ def process(fp: str) -> None:
     plt.imshow(new)
     plt.show()
 
+    # Normalize the pixels of the new image, and create a flattened copy of the
+    # image of shape (7500, 3)
     new = new / 255
     new_flattened = new.reshape((-1, 3))
 
+    # Initialize a sklearn MeanShift algorithm to help identify central clusters
+    # of color on the substrate. We choose not to cluster every single point by
+    # setting cluster_all=False. We fit the flattened image to the MeanShift instance.
+    # Then we retrieve the labels and cluster centers of the image.
     ms = MeanShift(cluster_all=False)
     ms.fit(new_flattened)
     labels = ms.labels_
     cluster_centers = ms.cluster_centers_
     n_clusters_ = len(labels)
 
+    # Plot a 3D graph of where the cluster centers are in RGB colorspace.
     fig = plt.figure()
     ax = fig.add_subplot(1, 1, 1, projection='3d')
     ax.scatter(cluster_centers[:, 0], cluster_centers[:, 1], cluster_centers[:, 2],
@@ -150,6 +120,7 @@ def process(fp: str) -> None:
     ax.set_zlabel('Blue')
     plt.show()
 
+    # Calculate the distances between each center and its other centers
     dists = []
     for i in range(len(cluster_centers)):
         row = []
@@ -160,6 +131,9 @@ def process(fp: str) -> None:
             row.append(dist)
         dists.append(row)
 
+    # Define a normalized threshold distance of 0.1, and remove any falsy cluster centers
+    # by checking if the average distance it is from other cluster centers is "too large",
+    # i.e. above the threshold value.
     threshold = .1
     remove = []
     for _ in range(len(dists)):
@@ -167,14 +141,14 @@ def process(fp: str) -> None:
         if abs(avg) >= threshold:
             remove.append(cluster_centers[_])
 
+    # Display the mean shift image, and replace the nearby pixels with the
+    # dominant background color if it is "nearby" a cluster center to remove
     ms_img = new.copy()
-    alls = []
     for r in range(w):
         for c in range(h):
             u = new[r, c]
             found = False
             for _ in remove:
-                alls.append(distance(u, _))
                 if nearby(u, _):
                     ms_img[r, c] = (fill[0] / 255, fill[1] / 255, fill[2] / 255)
                     found = True
@@ -184,6 +158,8 @@ def process(fp: str) -> None:
     plt.imshow(ms_img)
     plt.show()
 
+    # Show a 3D subplot of the image RGB values normalized before and
+    # after the MeanShift implementation.
     pixel_colors = img.reshape((np.shape(new)[0] * np.shape(new)[1], 3))
     norm = colors.Normalize(vmin=-1., vmax=1.)
     norm.autoscale(pixel_colors)
@@ -210,6 +186,7 @@ def process(fp: str) -> None:
     ax.set_zlabel('Blue')
     plt.show()
 
+    # Another round of bilateral filtering
     img_bl = ms_img.copy()
     img_bl = img_bl * 255.0
     img_bl = np.uint8(img_bl)
@@ -217,18 +194,13 @@ def process(fp: str) -> None:
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=2)
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=1)
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=1)
-    img_bl = cv2.GaussianBlur(img_bl, (1, 1), 0, 0)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=2)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=1)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=1)
-    img_bl = cv2.medianBlur(img_bl, 3)
-    img_bl = cv2.GaussianBlur(img_bl, (1, 1), 0, 0)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
-    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
     plt.imshow(img_bl)
     plt.show()
 
+    # todo clahe boost or try Lapaclian
+
+    # Grayscale the image and apply Sobel edge detection to the image to find
+    # sample edges.
     img_bl = cv2.cvtColor(img_bl, cv2.COLOR_RGB2GRAY)
     grad_x = cv2.Sobel(img_bl, cv2.CV_64F, 1, 0, ksize=3)
     grad_y = cv2.Sobel(img_bl, cv2.CV_64F, 0, 1, ksize=3)
@@ -236,6 +208,8 @@ def process(fp: str) -> None:
     abs_grad_y = cv2.convertScaleAbs(grad_y)
     grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
 
+    # Define a lower threshold of 8.0 in grayscale space, and use that to produce
+    # a binary mask image of 1s and 0s
     threshold = 8.0
     grad2 = grad.copy()
     for r in range(w):
@@ -243,12 +217,26 @@ def process(fp: str) -> None:
             if grad[r, c] < threshold:
                 grad2[r, c] = 0
             else:
-                grad2[r, c] = grad[r, c]
+                grad2[r, c] = 1
     plt.imshow(grad2, cmap='gray')
     plt.show()
 
-    img2 = img.copy()
-    plt.imshow(cv2.bitwise_and(img2, img2, mask=grad2))
+    # Floodfill the mask (i.e. fill in the space between the edges). Since the floodFill
+    # method requires a mask of size (rows+2, cols+2, 1), we later crop the image back
+    # to (75, 100, 1)
+    mask = np.zeros((77, 102, 1), np.uint8)
+    cv2.floodFill(grad2, mask, (0, 0), 1)
+    mask = mask[0:75, 0:100]
+
+    # The mask's 1s and 0s need to be inverted. This can be done by taking the new mask
+    # and setting the value to 1 - the old mask value
+    mask_inv = mask.copy()
+    for r in range(w):
+        for c in range(h):
+            mask_inv[r, c] = 1 - mask[r, c]
+
+    # Display the regions of interest (RoI)
+    plt.imshow(cv2.bitwise_and(img, img, mask=mask_inv))
     plt.show()
 
     # Finish the process and calculate the time required for the process
@@ -266,5 +254,5 @@ def nearby(point: tuple, center: tuple, eps: float = 0.01) -> bool:
 
 
 if __name__ == '__main__':
-    process(fp='/Users/firsttry/Desktop/Lab/test/3.png')
+    process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg')
 
