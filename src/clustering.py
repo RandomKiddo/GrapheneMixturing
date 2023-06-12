@@ -1,11 +1,11 @@
 import cv2
 import numpy as np
-from typing import *
-from sklearn.cluster import MeanShift, DBSCAN
-from sklearn.mixture import GaussianMixture
+from sklearn.cluster import MeanShift, KMeans, DBSCAN
+from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import time
+import math
 
 def process(fp: str) -> None:
     """
@@ -23,6 +23,7 @@ def process(fp: str) -> None:
     img = cv2.resize(img, (100, 75))
     img_flattened = img.reshape((-1, 3))
     shape = img.shape
+    w, h = img.shape[:2]
 
     # The next few lines figures out the most occurring / dominant color of the image,
     # which will be the background normalization fill image. We use a KMeans sequence
@@ -103,9 +104,8 @@ def process(fp: str) -> None:
     # the sample would be +/- α +/- β - 2.935l. Since we have l ∈ [1, 5], the upper bound of the
     # difference, taking an α ≈ β ≈ 2, we get a right threshold of about 20.
     # However, many images have contrast differences, so we increase the left threshold to a
-    # value of 35 (this helps deal with contrast deifferences as well).
+    # value of 35 (this helps deal with contrast differences as well).
     max_value = np.argmax(hist)
-    print(max_value)
     threshold_left = 35
     threshold_right = 1
 
@@ -120,6 +120,8 @@ def process(fp: str) -> None:
                 new[r, c] = img[r, c]
 
     # Median blur the image to remove stray lines, and normalize the background.
+    # We also go through a bilateral filter round before and after the median blur
+    # to help preserve the edges of the image.
     new = cv2.bilateralFilter(new, d=5, sigmaColor=10, sigmaSpace=1)
     new = cv2.bilateralFilter(new, d=5, sigmaColor=5, sigmaSpace=1)
     new = cv2.bilateralFilter(new, d=5, sigmaColor=1, sigmaSpace=1)
@@ -130,29 +132,139 @@ def process(fp: str) -> None:
     plt.imshow(new)
     plt.show()
 
-    # Flatten the image from (75, 100, 3) to (7500, 3)
+    new = new / 255
     new_flattened = new.reshape((-1, 3))
 
-    # Declare a GaussianMixture model from sklearn using covariance_type='tied' and
-    # fit it to the flattened image, looking for n_components=2 (sample or no sample)
-    gmm = GaussianMixture(n_components=2, covariance_type="tied")
-    gmm = gmm.fit(new_flattened)
+    ms = MeanShift(cluster_all=False)
+    ms.fit(new_flattened)
+    labels = ms.labels_
+    cluster_centers = ms.cluster_centers_
+    n_clusters_ = len(labels)
 
-    # Predict clusters on the image, and reshape the result from (7500, 3) back to
-    # (75, 100, 3), and display the image.
-    cluster = gmm.predict(new_flattened)
-    cluster = cluster.reshape(75, 100)
-    plt.imshow(cluster)
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(cluster_centers[:, 0], cluster_centers[:, 1], cluster_centers[:, 2],
+               marker='x', c='#ff0000', linewidths=2.5)
+    ax.set_xlabel('Red')
+    ax.set_ylabel('Green')
+    ax.set_zlabel('Blue')
+    plt.show()
+
+    dists = []
+    for i in range(len(cluster_centers)):
+        row = []
+        for j in range(len(cluster_centers)):
+            u = (cluster_centers[i, 0], cluster_centers[i, 1], cluster_centers[i, 2])
+            v = (cluster_centers[j, 0], cluster_centers[j, 1], cluster_centers[j, 2])
+            dist = distance(u, v)
+            row.append(dist)
+        dists.append(row)
+
+    threshold = .1
+    remove = []
+    for _ in range(len(dists)):
+        avg = sum(dists[_])/len(dists[_])
+        if abs(avg) >= threshold:
+            remove.append(cluster_centers[_])
+
+    ms_img = new.copy()
+    alls = []
+    for r in range(w):
+        for c in range(h):
+            u = new[r, c]
+            found = False
+            for _ in remove:
+                alls.append(distance(u, _))
+                if nearby(u, _):
+                    ms_img[r, c] = (fill[0] / 255, fill[1] / 255, fill[2] / 255)
+                    found = True
+                    break
+            if not found:
+                ms_img[r, c] = u
+    plt.imshow(ms_img)
+    plt.show()
+
+    pixel_colors = img.reshape((np.shape(new)[0] * np.shape(new)[1], 3))
+    norm = colors.Normalize(vmin=-1., vmax=1.)
+    norm.autoscale(pixel_colors)
+    pixel_colors = norm(pixel_colors).tolist()
+    r, g, b = cv2.split(new)
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
+    ax.set_xlabel('Red')
+    ax.set_ylabel('Green')
+    ax.set_zlabel('Blue')
+    plt.show()
+
+    pixel_colors = img.reshape((np.shape(ms_img)[0] * np.shape(ms_img)[1], 3))
+    norm = colors.Normalize(vmin=-1., vmax=1.)
+    norm.autoscale(pixel_colors)
+    pixel_colors = norm(pixel_colors).tolist()
+    r, g, b = cv2.split(ms_img)
+    fig = plt.figure()
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+    ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
+    ax.set_xlabel('Red')
+    ax.set_ylabel('Green')
+    ax.set_zlabel('Blue')
+    plt.show()
+
+    img_bl = ms_img.copy()
+    img_bl = img_bl * 255.0
+    img_bl = np.uint8(img_bl)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=2)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=1)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=1)
+    img_bl = cv2.GaussianBlur(img_bl, (1, 1), 0, 0)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=2)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=1)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=1)
+    img_bl = cv2.medianBlur(img_bl, 3)
+    img_bl = cv2.GaussianBlur(img_bl, (1, 1), 0, 0)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
+    img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=2)
+    plt.imshow(img_bl)
+    plt.show()
+
+    img_bl = cv2.cvtColor(img_bl, cv2.COLOR_RGB2GRAY)
+    grad_x = cv2.Sobel(img_bl, cv2.CV_64F, 1, 0, ksize=3)
+    grad_y = cv2.Sobel(img_bl, cv2.CV_64F, 0, 1, ksize=3)
+    abs_grad_x = cv2.convertScaleAbs(grad_x)
+    abs_grad_y = cv2.convertScaleAbs(grad_y)
+    grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
+
+    threshold = 8.0
+    grad2 = grad.copy()
+    for r in range(w):
+        for c in range(h):
+            if grad[r, c] < threshold:
+                grad2[r, c] = 0
+            else:
+                grad2[r, c] = grad[r, c]
+    plt.imshow(grad2, cmap='gray')
+    plt.show()
+
+    img2 = img.copy()
+    plt.imshow(cv2.bitwise_and(img2, img2, mask=grad2))
     plt.show()
 
     # Finish the process and calculate the time required for the process
     close_time = time.time()
     print('Processed in --- %s seconds' % (close_time - start_time))
 
+def distance(u: tuple, v: tuple) -> float:
+    return math.sqrt(
+        ((u[0]-v[0])**2) + ((u[1]-v[1])**2) + ((u[2]-v[2])**2)
+    )
+
+def nearby(point: tuple, center: tuple, eps: float = 0.01) -> bool:
+    dist = distance(point, center)
+    return abs(dist) <= eps
+
 
 if __name__ == '__main__':
-    process(fp='/Users/firsttry/Desktop/Lab/test/half.jpg')
-    process(fp='/Users/firsttry/Desktop/Lab/test/max.jpg')
     process(fp='/Users/firsttry/Desktop/Lab/test/3.png')
-    process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg')
 
