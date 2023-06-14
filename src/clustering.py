@@ -1,16 +1,18 @@
 import cv2
 import numpy as np
-from sklearn.cluster import MeanShift, KMeans, DBSCAN
-from sklearn.mixture import GaussianMixture, BayesianGaussianMixture
+from sklearn.cluster import MeanShift
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import time
 import math
+from typing import *
 
-def process(fp: str) -> None:
+def process(fp: str, verbose_plotting: Optional[bool] = False, allow_console_output: Optional[bool] = False) -> None:
     """
     Pre-process an image to be edge detected and clustered
     :param fp: The image filepath
+    :param verbose_plotting: If extra plots should be shown
+    :param allow_console_output: If console output should be allowed
     :return: None
     """
 
@@ -45,17 +47,18 @@ def process(fp: str) -> None:
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
 
     # Plot the image and a histogram of the grayscale color values
-    plt.subplot(1, 2, 1)
-    plt.imshow(gray, cmap='gray')
-    plt.title('image')
-    plt.xticks([])
-    plt.yticks([])
-    plt.subplot(1, 2, 2)
     hist, bin = np.histogram(gray.ravel(), 256, [0, 255])
-    plt.xlim([0, 255])
-    plt.plot(hist)
-    plt.title('histogram')
-    plt.show()
+    if verbose_plotting:
+        plt.subplot(1, 2, 1)
+        plt.imshow(gray, cmap='gray')
+        plt.title('image')
+        plt.xticks([])
+        plt.yticks([])
+        plt.subplot(1, 2, 2)
+        plt.xlim([0, 255])
+        plt.plot(hist)
+        plt.title('histogram')
+        plt.show()
 
     # Get the max value of the histogram and define left and right thresholds for the grayscale
     # color values. We don't want anything lighter than the substrate background, so we take a
@@ -92,8 +95,9 @@ def process(fp: str) -> None:
     new = cv2.bilateralFilter(new, d=5, sigmaColor=2, sigmaSpace=1)
     new = cv2.bilateralFilter(new, d=5, sigmaColor=1, sigmaSpace=1)
     new = cv2.bilateralFilter(new, d=5, sigmaColor=0.5, sigmaSpace=1)
-    plt.imshow(new)
-    plt.show()
+    if verbose_plotting:
+        plt.imshow(new)
+        plt.show()
 
     # Normalize the pixels of the new image, and create a flattened copy of the
     # image of shape (7500, 3)
@@ -111,14 +115,15 @@ def process(fp: str) -> None:
     n_clusters_ = len(labels)
 
     # Plot a 3D graph of where the cluster centers are in RGB colorspace.
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(cluster_centers[:, 0], cluster_centers[:, 1], cluster_centers[:, 2],
-               marker='x', c='#ff0000', linewidths=2.5)
-    ax.set_xlabel('Red')
-    ax.set_ylabel('Green')
-    ax.set_zlabel('Blue')
-    plt.show()
+    if verbose_plotting:
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection='3d')
+        ax.scatter(cluster_centers[:, 0], cluster_centers[:, 1], cluster_centers[:, 2],
+                   marker='x', c='#ff0000', linewidths=2.5)
+        ax.set_xlabel('Red')
+        ax.set_ylabel('Green')
+        ax.set_zlabel('Blue')
+        plt.show()
 
     # Calculate the distances between each center and its other centers
     dists = []
@@ -160,31 +165,32 @@ def process(fp: str) -> None:
 
     # Show a 3D subplot of the image RGB values normalized before and
     # after the MeanShift implementation.
-    pixel_colors = img.reshape((np.shape(new)[0] * np.shape(new)[1], 3))
-    norm = colors.Normalize(vmin=-1., vmax=1.)
-    norm.autoscale(pixel_colors)
-    pixel_colors = norm(pixel_colors).tolist()
-    r, g, b = cv2.split(new)
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
-    ax.set_xlabel('Red')
-    ax.set_ylabel('Green')
-    ax.set_zlabel('Blue')
-    plt.show()
+    if verbose_plotting:
+        pixel_colors = img.reshape((np.shape(new)[0] * np.shape(new)[1], 3))
+        norm = colors.Normalize(vmin=-1., vmax=1.)
+        norm.autoscale(pixel_colors)
+        pixel_colors = norm(pixel_colors).tolist()
+        r, g, b = cv2.split(new)
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection='3d')
+        ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
+        ax.set_xlabel('Red')
+        ax.set_ylabel('Green')
+        ax.set_zlabel('Blue')
+        plt.show()
 
-    pixel_colors = img.reshape((np.shape(ms_img)[0] * np.shape(ms_img)[1], 3))
-    norm = colors.Normalize(vmin=-1., vmax=1.)
-    norm.autoscale(pixel_colors)
-    pixel_colors = norm(pixel_colors).tolist()
-    r, g, b = cv2.split(ms_img)
-    fig = plt.figure()
-    ax = fig.add_subplot(1, 1, 1, projection='3d')
-    ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
-    ax.set_xlabel('Red')
-    ax.set_ylabel('Green')
-    ax.set_zlabel('Blue')
-    plt.show()
+        pixel_colors = img.reshape((np.shape(ms_img)[0] * np.shape(ms_img)[1], 3))
+        norm = colors.Normalize(vmin=-1., vmax=1.)
+        norm.autoscale(pixel_colors)
+        pixel_colors = norm(pixel_colors).tolist()
+        r, g, b = cv2.split(ms_img)
+        fig = plt.figure()
+        ax = fig.add_subplot(1, 1, 1, projection='3d')
+        ax.scatter(r.flatten(), g.flatten(), b.flatten(), facecolors=pixel_colors)
+        ax.set_xlabel('Red')
+        ax.set_ylabel('Green')
+        ax.set_zlabel('Blue')
+        plt.show()
 
     # Another round of bilateral filtering
     img_bl = ms_img.copy()
@@ -194,10 +200,9 @@ def process(fp: str) -> None:
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=2)
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.25, sigmaSpace=1)
     img_bl = cv2.bilateralFilter(img_bl, d=5, sigmaColor=0.5, sigmaSpace=1)
-    plt.imshow(img_bl)
-    plt.show()
-
-    # todo clahe boost or try Lapaclian
+    if verbose_plotting:
+        plt.imshow(img_bl)
+        plt.show()
 
     # Grayscale the image and apply Sobel edge detection to the image to find
     # sample edges.
@@ -208,9 +213,25 @@ def process(fp: str) -> None:
     abs_grad_y = cv2.convertScaleAbs(grad_y)
     grad = cv2.addWeighted(abs_grad_x, 0.5, abs_grad_y, 0.5, 0)
 
-    # Define a lower threshold of 8.0 in grayscale space, and use that to produce
+    hist, bin = np.histogram(grad.ravel(), 256, [0, 255])
+    if verbose_plotting:
+        plt.subplot(1, 2, 1)
+        plt.imshow(grad, cmap='gray')
+        plt.title('image')
+        plt.xticks([])
+        plt.yticks([])
+        plt.subplot(1, 2, 2)
+        plt.xlim([0, 255])
+        plt.plot(hist)
+        plt.title('histogram')
+        plt.show()
+
+    threshold = round((hist[0]/sum(hist))*10+2, 0)
+    if allow_console_output:
+        print(f'Using a threshold value of: {threshold}')
+
+    # Define a lower threshold of 4.0 in grayscale space, and use that to produce
     # a binary mask image of 1s and 0s
-    threshold = 8.0
     grad2 = grad.copy()
     for r in range(w):
         for c in range(h):
@@ -218,8 +239,9 @@ def process(fp: str) -> None:
                 grad2[r, c] = 0
             else:
                 grad2[r, c] = 1
-    plt.imshow(grad2, cmap='gray')
-    plt.show()
+    if verbose_plotting:
+        plt.imshow(grad2, cmap='gray')
+        plt.show()
 
     # Floodfill the mask (i.e. fill in the space between the edges). Since the floodFill
     # method requires a mask of size (rows+2, cols+2, 1), we later crop the image back
@@ -227,6 +249,9 @@ def process(fp: str) -> None:
     mask = np.zeros((77, 102, 1), np.uint8)
     cv2.floodFill(grad2, mask, (0, 0), 1)
     mask = mask[0:75, 0:100]
+    if verbose_plotting:
+        plt.imshow(mask, cmap='gray')
+        plt.show()
 
     # The mask's 1s and 0s need to be inverted. This can be done by taking the new mask
     # and setting the value to 1 - the old mask value
@@ -236,7 +261,44 @@ def process(fp: str) -> None:
             mask_inv[r, c] = 1 - mask[r, c]
 
     # Display the regions of interest (RoI)
-    plt.imshow(cv2.bitwise_and(img, img, mask=mask_inv))
+    roi = cv2.bitwise_and(img, img, mask=mask_inv)
+
+    green = roi.copy()
+    for r in range(w):
+        for c in range(h):
+            if tuple(roi[r, c]) == (0, 0, 0):
+                green[r, c] = (0, dominant[1], 0)
+            else:
+                green[r, c] = (0, roi[r, c][1], 0)
+
+    final = green.copy()
+    color = {
+        'nothing': (166, 77, 255),  # lavender
+        '5': (255, 0, 0),  # red
+        '4': (255, 128, 0),  # orange
+        '3': (255, 255, 0),  # yellow
+        '2': (0, 255, 85),  # malachite
+        '1': (0, 255, 255)  # aqua
+    }
+    for r in range(w):
+        for c in range(h):
+            _, g, _ = green[r, c]
+            diff = int(dominant[1] - g)
+            if diff < 4:
+                final[r, c] = color['nothing']
+            elif diff < 9:
+                final[r, c] = color['1']
+            elif diff < 15:
+                final[r, c] = color['2']
+            elif diff < 20:
+                final[r, c] = color['3']
+            elif diff < 25:
+                final[r, c] = color['4']
+            elif diff < 30:
+                final[r, c] = color['5']
+            else:
+                final[r, c] = color['nothing']
+    plt.imshow(final)
     plt.show()
 
     # Finish the process and calculate the time required for the process
@@ -244,15 +306,31 @@ def process(fp: str) -> None:
     print('Processed in --- %s seconds' % (close_time - start_time))
 
 def distance(u: tuple, v: tuple) -> float:
+    """
+    Calculates the distance between two points in R^3, mathematically
+    defined as ||u-v||
+    :param u: The first 3-dimensional tuple
+    :param v: The second 3-dimensional tuple
+    :return: The distance as defined by the distance formula
+    """
     return math.sqrt(
         ((u[0]-v[0])**2) + ((u[1]-v[1])**2) + ((u[2]-v[2])**2)
     )
 
-def nearby(point: tuple, center: tuple, eps: float = 0.01) -> bool:
+def nearby(point: tuple, center: tuple, eps: Optional[float] = 0.01) -> bool:
+    """
+    Returns true if the distance from point to center is less than eps,
+    mathematically defined as ||point-center|| < ε
+    :param point: The point in R^3
+    :param center: A center in R^3
+    :param eps: The epsilon value to define "closeness"
+    :return: If the point is nearby
+    """
     dist = distance(point, center)
     return abs(dist) <= eps
 
 
 if __name__ == '__main__':
+    # process(fp='/Users/firsttry/Desktop/Lab/test/3.png')
     process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg')
 

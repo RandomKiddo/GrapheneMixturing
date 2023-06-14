@@ -156,12 +156,12 @@ print(max(set(greens), key=greens.count))
 resize = Image.open(path + '3.png')
 final = resize.copy()
 colors = {
-    'nothing': (166, 77, 255), # lavender
-    '5': (255, 0, 0), # red
-    '4': (255, 128, 0), # orange
-    '3': (255, 255, 0), # yellow
-    '2': (0, 255, 85), # malachite
-    '1': (0, 255, 255) # aqua
+    'nothing': (166, 77, 255),  # lavender
+    '5': (255, 0, 0),  # red
+    '4': (255, 128, 0),  # orange
+    '3': (255, 255, 0),  # yellow
+    '2': (0, 255, 85),  # malachite
+    '1': (0, 255, 255)  # aqua
 }
 
 # Color the image based on the layers using green color
