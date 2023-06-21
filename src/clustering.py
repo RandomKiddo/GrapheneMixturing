@@ -206,6 +206,7 @@ def process(fp: str, verbose_plotting: Optional[bool] = False, allow_console_out
 
     # Grayscale the image and apply Sobel edge detection to the image to find
     # sample edges.
+    save = img_bl
     img_bl = cv2.cvtColor(img_bl, cv2.COLOR_RGB2GRAY)
     grad_x = cv2.Sobel(img_bl, cv2.CV_64F, 1, 0, ksize=3)
     grad_y = cv2.Sobel(img_bl, cv2.CV_64F, 0, 1, ksize=3)
@@ -262,6 +263,8 @@ def process(fp: str, verbose_plotting: Optional[bool] = False, allow_console_out
 
     # Display the regions of interest (RoI)
     roi = cv2.bitwise_and(img, img, mask=mask_inv)
+    plt.imshow(roi, cmap='gray')
+    plt.show()
 
     green = roi.copy()
     for r in range(w):
@@ -271,6 +274,7 @@ def process(fp: str, verbose_plotting: Optional[bool] = False, allow_console_out
             else:
                 green[r, c] = (0, roi[r, c][1], 0)
 
+    '''
     final = green.copy()
     color = {
         'nothing': (166, 77, 255),  # lavender
@@ -299,6 +303,64 @@ def process(fp: str, verbose_plotting: Optional[bool] = False, allow_console_out
             else:
                 final[r, c] = color['nothing']
     plt.imshow(final)
+    plt.show()
+    '''
+
+    color = {
+        'nothing': (166, 77, 255),  # lavender
+        '5': (255, 0, 0),  # red
+        '4': (255, 128, 0),  # orange
+        '3': (255, 255, 0),  # yellow
+        '2': (0, 255, 85),  # malachite
+        '1': (0, 255, 255)  # aqua
+    }
+    final = green.copy()
+
+    for r in range(w):
+        for c in range(h):
+            if mask_inv[r, c] == 0:
+                final[r, c] = color['nothing']
+            else:
+                rad = 3
+                found = False
+                values = []
+                while not found:
+                    for i in range(-rad, rad+1, 1):
+                        for j in range(-rad, rad+1, 1):
+                            try:
+                                if mask_inv[r+i, c+j] == 0:
+                                    values.append(int(save[r+i, c+j][1]))
+                                    if len(values) >= 30:
+                                        found = True
+                            except IndexError:
+                                continue
+                    if not found:
+                        rad += 2
+                for _ in range(30):
+                    values.append(int(dominant[1]))
+                value = round(sum(values)/len(values), 0)
+                diff = value - int(save[r, c][1])
+                if r == 30 and c == 50:
+                    print(value)
+                    print(diff)
+                if diff < 4:
+                    final[r, c] = color['nothing']
+                elif diff < 9:
+                    final[r, c] = color['1']
+                elif diff < 15:
+                    final[r, c] = color['2']
+                elif diff < 20:
+                    final[r, c] = color['3']
+                elif diff < 25:
+                    final[r, c] = color['4']
+                elif diff < 30:
+                    final[r, c] = color['5']
+                else:
+                    final[r, c] = color['nothing']
+    plt.imshow(final)
+    plt.show()
+
+    plt.imshow(img)
     plt.show()
 
     # Finish the process and calculate the time required for the process
