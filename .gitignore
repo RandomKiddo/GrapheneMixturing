@@ -5,16 +5,8 @@
 src/saved_models
 src/saved_figs
 
-# Other Images
-All_Images/
-Images_Resized/
-Images_Resized_2/
-GAN/
-GANImages/
-Max/
-Images_Resized_3/
-Images/Masked/
-Images/Resized/
+# Images
+Images/
 
 # PyCharm
 .idea/
