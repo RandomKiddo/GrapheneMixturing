@@ -1,11 +1,13 @@
 import statistics
 import cv2
 import matplotlib.pyplot as plt
+import matplotlib.patches as patches
 import numpy as np
 from sklearn.cluster import DBSCAN
 from typing import *
 import time
 from sklearn.mixture import GaussianMixture
+import random
 
 def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = True, timed: Optional[bool] = True,
             intense_clean: Optional[bool] = True, console_output: Optional[bool] = False) -> Tuple[Any, Any, float]:
@@ -140,11 +142,6 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
         plt.imshow(gmm_prep)
         plt.show()
 
-    plt.subplot(1, 3, 1)
-    plt.imshow(img_rgb)
-    plt.axis('off')
-    plt.title(f'Original Image', fontsize=8)
-
     # We use DBSCAN to cluster the image. We use an epsilon of 1.4, and we use a min_samples
     # values of channels+1 = 3+1 = 4. We fit the instance to the prepared data, flattened from
     # 75x100x3 to 7500x3, and then retrieve the labels. If we are not cleaning the image,
@@ -154,10 +151,6 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     labels = db.labels_
     if console_output:
         print('--- DBSCAN and GMM Prep Completed ---')
-    plt.subplot(1, 3, 2)
-    plt.imshow(labels.reshape((75, 100)))
-    plt.axis('off')
-    plt.title(f'DBSCAN', fontsize=8)
 
     # We then use GaussianMixture modeling on 5 components to help reduce the number of features
     # provided by the DBSCAN (somtimes upwards of 40!). We are required to expand the dimensions
@@ -178,12 +171,6 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     gmm_labels = gmm.predict(np.expand_dims(labels, axis=-1))
     if console_output:
         print('--- GMM_N Completed ---')
-    plt.subplot(1, 3, 3)
-    plt.imshow(gmm_labels.reshape((75, 100)))
-    plt.axis('off')
-    plt.title(f'GMM', fontsize=8)
-    plt.savefig('dbscan.png')
-    plt.show()
 
     # True by default; Clean up the images to reduce noise. This not only deals with stray pixels
     # from the DBSCAN and GaussianMixture algorithms (through kernel size 3 median blurring), but
@@ -197,10 +184,6 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     # 4. If the pixel is enclosed in the left and right, we can assume it's not stray
     # This algorithm is not perfect, but works well for pixels near the sample.
     if clean:
-        plt.subplot(1, 3, 1)
-        plt.imshow(gmm_labels.reshape((75, 100)))
-        plt.title('Original GMM', fontsize=8)
-        plt.axis('off')
         if console_output:
             print('--- Cleaning Detected ---')
         blur = cv2.medianBlur(np.uint8(gmm_labels.reshape((75, 100))), 3)
@@ -227,10 +210,6 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
                         total += 1
         if console_output:
             print(f'--- {total} Stray Pixels Adjusted ---')
-        plt.subplot(1, 3, 2)
-        plt.imshow(blur)
-        plt.title(f'Stray Pixels Fixed', fontsize=8)
-        plt.axis('off')
 
         # If intense cleaning is detected (True by default) we continue cleaning using the following
         # methodology:
@@ -284,25 +263,85 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
                 blur[data[1], data[2]] = label_closest
             if console_output:
                 print(f'--- {len(reclassify)} Pixels Reclassified ---')
-            plt.subplot(1, 3, 3)
-            plt.imshow(blur)
-            plt.title(f'Far Pixels Reclassified', fontsize=8)
-            plt.axis('off')
-            plt.savefig('cleaning3.png')
-            plt.show()
-            print(set(list(blur.flatten())))
         if console_output:
             print('--- Image Cleaned ---')
     else:
         blur = gmm_labels.reshape((75, 100))
 
+    # Get the layers (aka "score") of each label
+    scoring = {}
+    for r in range(w):
+        for c in range(h):
+            _, g, _ = img_rgb[r, c]
+            label = blur[r, c]
+            if scoring.get(label) is None:
+                scoring[label] = [g, ]
+            else:
+                scoring[label].append(g)
+    mode = statistics.mode(blur.flatten().tolist())
+    median = statistics.median(scoring[mode])
+    for _ in scoring:
+        scoring[_] = sum(scoring[_])/len(scoring[_])
+    scoring[mode] = median
+    classes = {}
+    dists = {}
+    for _ in scoring:
+        if _ != mode:
+            dist = int(scoring[mode] - scoring[_]) // 5
+            classes[_] = f'{dist} Layer(s)'
+            dists[_] = dist
+    classes[mode] = 'Background/Noise'
+
+    # Remove any "0 Layer" values, that's just noise
+    remove = []
+    for _ in np.unique(blur.flatten().tolist()):
+        if _ != mode and dists[_] == 0:
+            remove.append(_)
+    for r in range(w):
+        for c in range(h):
+            if blur[r, c] in remove:
+                blur[r, c] = mode
+
+    # Check for any double values and deal with them if they exist
+    convert = {}
+    for i in np.unique(blur.flatten().tolist()):
+        if i == mode:
+            continue
+        for j in np.unique(blur.flatten().tolist()):
+            if j == mode:
+                continue
+            if i != j and convert.get(dists[i]) is None and dists[i] == dists[j]:
+                convert[dists[i]] = [i, j]
+            elif i != j and dists[i] == dists[j] and convert.get(dists[i]) is not None:
+                opts = convert[dists[i]]
+                if i not in opts:
+                    convert[dists[i]].append(i)
+                if j not in opts:
+                    convert[dists[i]].append(j)
+    if convert:
+        picks = {}
+        for r in range(w):
+            for c in range(h):
+                label = blur[r, c]
+                for _ in convert:
+                    if label in convert[_] and picks.get(_) is None:
+                        picks[_] = random.choice(convert[_])
+                        blur[r, c] = picks[_]
+                    elif label in convert[_] and picks.get(_) is not None:
+                        blur[r, c] = picks[_]
+
     # Show a side-by-side plot of the given image and the clustered result
+    # The label will be cut off in the view, but not in the saved image
     plt.subplot(1, 2, 1)
     plt.imshow(img_rgb)
     plt.title('Original Image')
     plt.subplot(1, 2, 2)
-    plt.imshow(blur)
+    im = plt.imshow(blur)
+    colors = {_: im.cmap(im.norm(_)) for _ in np.unique(blur.flatten().tolist())}
+    swatches = [patches.Patch(color=colors[_], label=classes[_]) for _ in np.unique(blur.flatten().tolist())]
     plt.title('Clustered Image')
+    plt.legend(handles=swatches, loc="center left", bbox_to_anchor=(1.1, 0.5))
+    plt.savefig('test.png', bbox_inches='tight')
     plt.show()
 
     # If timing, stop the timer
