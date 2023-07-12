@@ -140,6 +140,11 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
         plt.imshow(gmm_prep)
         plt.show()
 
+    plt.subplot(1, 3, 1)
+    plt.imshow(img_rgb)
+    plt.axis('off')
+    plt.title(f'Original Image', fontsize=8)
+
     # We use DBSCAN to cluster the image. We use an epsilon of 1.4, and we use a min_samples
     # values of channels+1 = 3+1 = 4. We fit the instance to the prepared data, flattened from
     # 75x100x3 to 7500x3, and then retrieve the labels. If we are not cleaning the image,
@@ -149,6 +154,10 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     labels = db.labels_
     if console_output:
         print('--- DBSCAN and GMM Prep Completed ---')
+    plt.subplot(1, 3, 2)
+    plt.imshow(labels.reshape((75, 100)))
+    plt.axis('off')
+    plt.title(f'DBSCAN', fontsize=8)
 
     # We then use GaussianMixture modeling on 5 components to help reduce the number of features
     # provided by the DBSCAN (somtimes upwards of 40!). We are required to expand the dimensions
@@ -169,6 +178,12 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     gmm_labels = gmm.predict(np.expand_dims(labels, axis=-1))
     if console_output:
         print('--- GMM_N Completed ---')
+    plt.subplot(1, 3, 3)
+    plt.imshow(gmm_labels.reshape((75, 100)))
+    plt.axis('off')
+    plt.title(f'GMM', fontsize=8)
+    plt.savefig('dbscan.png')
+    plt.show()
 
     # True by default; Clean up the images to reduce noise. This not only deals with stray pixels
     # from the DBSCAN and GaussianMixture algorithms (through kernel size 3 median blurring), but
@@ -182,10 +197,15 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
     # 4. If the pixel is enclosed in the left and right, we can assume it's not stray
     # This algorithm is not perfect, but works well for pixels near the sample.
     if clean:
+        plt.subplot(1, 3, 1)
+        plt.imshow(gmm_labels.reshape((75, 100)))
+        plt.title('Original GMM', fontsize=8)
+        plt.axis('off')
         if console_output:
             print('--- Cleaning Detected ---')
         blur = cv2.medianBlur(np.uint8(gmm_labels.reshape((75, 100))), 3)
         mode = statistics.mode(gmm_labels)
+        total = 0
         for r in range(w):
             for c in range(h):
                 if blur[r, c] != mode:
@@ -204,8 +224,13 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
                             continue
                     if not found_left or not found_right:
                         blur[r, c] = mode
+                        total += 1
         if console_output:
-            print('--- Stray Pixels Adjusted ---')
+            print(f'--- {total} Stray Pixels Adjusted ---')
+        plt.subplot(1, 3, 2)
+        plt.imshow(blur)
+        plt.title(f'Stray Pixels Fixed', fontsize=8)
+        plt.axis('off')
 
         # If intense cleaning is detected (True by default) we continue cleaning using the following
         # methodology:
@@ -259,6 +284,13 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
                 blur[data[1], data[2]] = label_closest
             if console_output:
                 print(f'--- {len(reclassify)} Pixels Reclassified ---')
+            plt.subplot(1, 3, 3)
+            plt.imshow(blur)
+            plt.title(f'Far Pixels Reclassified', fontsize=8)
+            plt.axis('off')
+            plt.savefig('cleaning3.png')
+            plt.show()
+            print(set(list(blur.flatten())))
         if console_output:
             print('--- Image Cleaned ---')
     else:
@@ -285,7 +317,7 @@ def process(fp: str, verbose: Optional[bool] = False, clean: Optional[bool] = Tr
         print('------------------------------------------------------')
 
     # Return a copy of the image, and the clustered image labels
-    return img, labels, process_time
+    return img, blur, process_time
 
 def distance(u: list, v: list) -> float:
     """
@@ -306,4 +338,5 @@ def distance(u: list, v: list) -> float:
 
 if __name__ == '__main__':
     _, _, _ = process(fp='/Users/firsttry/Desktop/Lab/test/3.png', console_output=True)
-    _, _, _ = process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg', console_output=True)
+    # _, _, _ = process(fp='/Users/firsttry/Desktop/Lab/test/3.jpg', console_output=True)
+    # _, _, _ = process(fp='/Users/firsttry/Desktop/Lab/test/testt/photo.jpg', console_output=True)
